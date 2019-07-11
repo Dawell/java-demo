@@ -1,20 +1,25 @@
 package com.dawell.java.demo1;
 
 import ch.qos.logback.core.net.SyslogOutputStream;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ResolvableType;
 
+import java.io.Serializable;
+import java.lang.reflect.Field;
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RecursiveAction;
 import java.util.concurrent.RecursiveTask;
+import java.util.function.Consumer;
 
 @Slf4j
 public class Demo1 {
 
     private Map<String, Integer> myMap;
 
-    public static void main(String[] args) throws NoSuchFieldException {
+    public static void main(String[] args) throws NoSuchFieldException, InterruptedException, IllegalAccessException, CloneNotSupportedException {
 
         testSort();
 
@@ -26,6 +31,151 @@ public class Demo1 {
 
         testResolvableType();
 
+        testStackTrace();
+
+        testList();
+
+        testlambda();
+
+        testInnerString();
+
+        TestInterface.test("123");
+
+        print((CharSequence) "123");
+
+        testClone();
+        // 线程安全
+        Collections.unmodifiableCollection(Arrays.asList(1, 2, 3, 4, 5));
+
+
+
+    }
+
+    private static void testClone() throws CloneNotSupportedException {
+        Data data = new Data();
+        data.setA("sss");
+        Data data2 = data.clone();
+        log.info(data2.toString());
+        log.info("{}", data2 == data);
+        log.info("{}", data2.a == data.a);
+        Data data3 = data.clone2();
+        log.info(data3.toString());
+        log.info("{}", data3 == data);
+        log.info("{}", data3.a == data.a);
+    }
+
+    @lombok.Data
+    static class Data implements Cloneable {
+
+        private String a;
+
+        @Override
+        public Data clone() throws CloneNotSupportedException {
+            return (Data) super.clone();
+        }
+
+        public Data clone2() throws CloneNotSupportedException {
+            Data clone = (Data) super.clone();
+            clone.setA(new String(this.a));
+            return clone;
+        }
+    }
+
+    static class SnapshotData {
+
+        private List<String> a;
+
+        public List<String> getA() {
+            return new ArrayList<>(a);
+        }
+    }
+
+    private static void print(CharSequence s) {
+
+    }
+
+    private static void print(Serializable s) {
+
+    }
+
+    interface TestInterface {
+
+        static void test(String s) {
+            System.out.println(s);
+        }
+
+        default void test2() {
+            System.out.println();
+        }
+
+    }
+
+    private static void testInnerString() throws NoSuchFieldException, IllegalAccessException {
+        String abc = "abc";
+
+        Field field = String.class.getDeclaredField("value");
+        field.setAccessible(true);
+//        field.set(abc, "def".toCharArray());
+        field.set(abc, "def".getBytes());
+        log.info("abc: " + abc);
+
+        log.info("abc");
+    }
+
+    private static void testlambda() {
+        new Runnable() {
+            @Override
+            public void run() {
+
+            }
+        };
+
+        new Callable<String>() {
+            @Override
+            public String call() throws Exception {
+                return null;
+            }
+        };
+
+        Action action = () -> {
+        };
+
+        Action action2 = System.out::println;
+        Consumer consumer = System.out::println;
+    }
+
+    public interface Action {
+        void execute();
+
+        default void execute2() {
+
+        }
+
+    }
+
+    private static void testList() {
+        List<String> a = Collections.emptyList();
+        List b = null;
+        a = b;
+        b = a;
+    }
+//
+//    public interface Converter {
+//
+//    }
+
+    public interface Converter<S, T> {
+
+        T convert(S source);
+
+    }
+
+    private static void testStackTrace() {
+        StackTraceElement[] sts = new Throwable().getStackTrace();
+        log.info("目前方法栈深度：{}", sts.length);
+        Arrays.stream(sts).forEach(st -> {
+            log.info(st.getMethodName());
+        });
     }
 
     private static void testResolvableType() throws NoSuchFieldException {
