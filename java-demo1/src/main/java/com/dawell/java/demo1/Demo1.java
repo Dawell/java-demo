@@ -1,21 +1,32 @@
 package com.dawell.java.demo1;
 
-import ch.qos.logback.core.net.SyslogOutputStream;
-import lombok.Data;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ResolvableType;
 
 import java.io.Serializable;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 import java.lang.reflect.Field;
+import java.lang.reflect.Proxy;
+import java.lang.reflect.Type;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RecursiveAction;
 import java.util.concurrent.RecursiveTask;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 
-@Slf4j
+@Demo1.DemoAnnotation(value = "test")
+//@Slf4j
 public class Demo1 {
+
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target(ElementType.TYPE)
+    public @interface DemoAnnotation {
+        String value() default "";
+    }
 
     private Map<String, Integer> myMap;
 
@@ -44,30 +55,164 @@ public class Demo1 {
         print((CharSequence) "123");
 
         testClone();
+
+        testGeneric();
+
+        testReturn();
+
+        testAnnotation();
+
+        Module module = Demo1.class.getModule();
+        // auto module 返回null
+        System.out.println(module.getName());
+        System.out.println(module.getDescriptor());
+
+    }
+
+    private static void testAnnotation() {
+        LinkedList<Integer> list = Stream.of(1, 2, 3, 4, 5)
+                .collect(LinkedList::new, List::add, List::addAll);
+
+        DemoAnnotation annotation = Demo1.class.getDeclaredAnnotation(DemoAnnotation.class);
+        System.out.println(annotation.getClass().toString());
+        System.out.println((Proxy.getInvocationHandler(annotation).toString()));
+    }
+
+    @FunctionalInterface
+    public interface Function {
+
+        void execute();
+
+    }
+
+    private static void addElements(Collection<String> collection, String... elements) {
+
+    }
+
+    private static void addElements2(Collection<String> collection, String elemetn, String... others) {
+
+    }
+
+    private static Collection<Integer> testReturn() {
         // 线程安全
         Collections.unmodifiableCollection(Arrays.asList(1, 2, 3, 4, 5));
 
+        List<Integer> numbers = Arrays.asList(1, 2, 3, 4, 5);
+        return new ArrayList<>(numbers);
+
+    }
+
+    private static void testGeneric() {
+        Type intType = int.class;
+        Class intClass = int.class;
+
+        Container<StringBuilder> container2 = new Container<>(new StringBuilder());
+        Container<StringBuilder> container = new Container("123");
+//        Container<StringBuilder> container2 = new Container<>("");
+//        StringBuilder element = container.getElement(); // ClassCastException
+        container.setElement(new StringBuilder());
+
+        List<String> a = new ArrayList<>();
+        add(a, "123");
+        add2(a, "456");
+        foreach(a, System.out::println);
+        Set<String> b = new HashSet<>();
+        add(b, "123");
+        add2(b, "456");
+        foreach(b, Demo1::print2);
+        foreach(b, Demo1::print3);
+
+        String aStr = a.get(0);
+        System.out.println(aStr);
+    }
 
 
+    static <E extends CharSequence> Collection<E> add(Collection<E> target, E e) {
+        target.add(e);
+        return target;
+    }
+
+    static <C extends Collection<E>, E extends CharSequence> C add2(C target, E e) {
+        target.add(e);
+        return target;
+    }
+
+//    static <C extends Collection<E>, E extends CharSequence> C add3(C target, CharSequence e) {
+//        target.add(e);
+//        return target;
+//    }
+
+    static <C extends Iterable<E>, E extends CharSequence> void foreach(C target, Consumer<E> c) {
+        for (E e : target) {
+            c.accept(e);
+        }
+    }
+
+    static <T extends CharSequence> void print2(T o) {
+        System.out.println(o);
+    }
+
+    private static void print3(CharSequence o) {
+        System.out.println(o);
+    }
+
+    static class Container<T extends CharSequence> {
+        private T element;
+
+        public Container(T element) {
+            this.element = element;
+        }
+
+        public T getElement() {
+            return element;
+        }
+
+        public void setElement(T element) {
+            this.element = element;
+        }
+    }
+
+    static final class Counting {
+
+        public static Counting ONE = new Counting();
+        public static Counting TWO = new Counting();
+        public static Counting THREE = new Counting();
+
+        private Counting() {
+
+        }
+
+    }
+
+    enum Counting2 {
+        ONE, TWO, THREE
     }
 
     private static void testClone() throws CloneNotSupportedException {
         Data data = new Data();
         data.setA("sss");
         Data data2 = data.clone();
-        log.info(data2.toString());
-        log.info("{}", data2 == data);
-        log.info("{}", data2.a == data.a);
+        System.out.println(data2.toString());
+        System.out.println(data2 == data);
+        System.out.println(data2.a == data.a);
         Data data3 = data.clone2();
-        log.info(data3.toString());
-        log.info("{}", data3 == data);
-        log.info("{}", data3.a == data.a);
+        System.out.println(data3.toString());
+        System.out.println(data3 == data);
+        System.out.println(data3.a == data.a);
     }
 
-    @lombok.Data
+    //    @lombok.Data
     static class Data implements Cloneable {
 
         private String a;
+
+        public String getA() {
+            return a;
+        }
+
+        public void setA(String a) {
+            this.a = a;
+        }
 
         @Override
         public Data clone() throws CloneNotSupportedException {
@@ -117,9 +262,9 @@ public class Demo1 {
         field.setAccessible(true);
 //        field.set(abc, "def".toCharArray());
         field.set(abc, "def".getBytes());
-        log.info("abc: " + abc);
+        System.out.println("abc: " + abc);
 
-        log.info("abc");
+        System.out.println("abc");
     }
 
     private static void testlambda() {
@@ -172,27 +317,27 @@ public class Demo1 {
 
     private static void testStackTrace() {
         StackTraceElement[] sts = new Throwable().getStackTrace();
-        log.info("目前方法栈深度：{}", sts.length);
+        System.out.println("目前方法栈深度：" + sts.length);
         Arrays.stream(sts).forEach(st -> {
-            log.info(st.getMethodName());
+            System.out.println(st.getMethodName());
         });
     }
 
     private static void testResolvableType() throws NoSuchFieldException {
         ResolvableType t = ResolvableType.forField(Demo1.class.getDeclaredField("myMap"));
-        log.info(Objects.toString(t.getSuperType()));
-        log.info(Objects.toString(t.asMap()));
-        log.info(Objects.toString(t.getGeneric(0).resolve()));
-        log.info(Objects.toString(t.getGeneric(1).resolve()));
-        log.info(Objects.toString(t.getGeneric(1)));
-        log.info(Objects.toString(t.resolveGeneric(1, 0)));
+        System.out.println(Objects.toString(t.getSuperType()));
+        System.out.println(Objects.toString(t.asMap()));
+        System.out.println(Objects.toString(t.getGeneric(0).resolve()));
+        System.out.println(Objects.toString(t.getGeneric(1).resolve()));
+        System.out.println(Objects.toString(t.getGeneric(1)));
+        System.out.println(Objects.toString(t.resolveGeneric(1, 0)));
     }
 
     public static void execute(Callback callback) {
         try {
             callback.callback("123");
         } catch (Exception e) {
-            log.error("callback error!", e);
+//            log.error("callback error!", e);
         }
     }
 
@@ -210,11 +355,11 @@ public class Demo1 {
         final String d = "3";
         boolean b4 = "12" + d == "123";
         String temp = "ABC" + e + 'D';
-        log.info(Boolean.toString(b));
-        log.info(Boolean.toString(b2));
-        log.info(Boolean.toString(b3));
-        log.info(Boolean.toString(b4));
-        log.info(temp);
+        System.out.println(Boolean.toString(b));
+        System.out.println(Boolean.toString(b2));
+        System.out.println(Boolean.toString(b3));
+        System.out.println(Boolean.toString(b4));
+        System.out.println(temp);
     }
 
     private static void testForkJoin() {
