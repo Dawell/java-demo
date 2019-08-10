@@ -8,6 +8,7 @@ module javademo {
     requires spring.core;
     requires java.management;
     requires fastjson;
+    requires jdk.unsupported;
     //    requires java.logging;
 
 }

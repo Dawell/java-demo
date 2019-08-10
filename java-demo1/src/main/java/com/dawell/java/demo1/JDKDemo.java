@@ -1,8 +1,10 @@
 package com.dawell.java.demo1;
 
-import com.alibaba.fastjson.JSON;
 import org.springframework.core.ResolvableType;
+import org.springframework.objenesis.ObjenesisException;
+import org.springframework.objenesis.instantiator.util.UnsafeUtils;
 import org.springframework.util.StopWatch;
+import sun.misc.Unsafe;
 
 import java.io.*;
 import java.lang.annotation.ElementType;
@@ -15,15 +17,17 @@ import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
+import java.security.PrivilegedExceptionAction;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.*;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.RecursiveAction;
-import java.util.concurrent.RecursiveTask;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
@@ -97,26 +101,169 @@ public class JDKDemo {
 
         testDeadLock();
 
+        testProduceAndConsume();
+
+        testLock();
+
+        testUnsafe();
+
+    }
+
+    private static void testLock() {
+        ReentrantLock lock = new ReentrantLock();
+
+        try {
+            lock.lock();
+            // ...
+        } finally {
+            lock.unlock();
+        }
+
+        ReentrantLock lock2 = new ReentrantLock();
+
+        try {
+            lock2.tryLock(3, TimeUnit.SECONDS);
+            // ...
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            lock2.unlock();
+        }
+
+        ReentrantLock lock3 = new ReentrantLock();
+        System.out.println("重进入次数： " + lock3.getHoldCount());
+        lockCount(lock3, 10);
+    }
+
+    private static void testUnsafe() throws NoSuchFieldException, IllegalAccessException, java.security.PrivilegedActionException {
+        AtomicBoolean ab = new AtomicBoolean();
+        ab.set(true);
+        ab.get();
+
+        UnsafeUtils.getUnsafe();
+        try {
+            Unsafe unsafe = Unsafe.getUnsafe();
+        } catch (Exception e) {
+            System.out.println(e.getClass().getName());
+        }
+
+        PrivilegedExceptionAction<Unsafe> action = new PrivilegedExceptionAction<Unsafe>() {
+            @Override
+            public Unsafe run() throws Exception {
+                Field f = Unsafe.class.getDeclaredField("theUnsafe");
+                f.setAccessible(true);
+                return (Unsafe)f.get((Object)null);
+            }
+        };
+        Unsafe unsafe = AccessController.doPrivileged(action);
+
+        AtomicLong al = new AtomicLong();
+        al.set(1);
+        al.get();
+    }
+
+    private static void lockCount(ReentrantLock lock, int times) {
+        if (times < 1) {
+            return;
+        }
+        try {
+            lock.lock();
+            System.out.println("重进入次数： " + lock.getHoldCount());
+            lockCount(lock, times - 1);
+        } finally {
+            lock.unlock();
+        }
+
+    }
+
+    private static void testProduceAndConsume() throws InterruptedException {
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+
+        Runner runner = new Runner();
+
+        Future<?> producerFuture = executorService.submit(() -> {
+            runner.produce();
+        });
+        Future<?> consumerFuture = executorService.submit(() -> {
+            runner.consume();
+        });
+
+//        producerFuture.get();
+//        consumerFuture.get();
+
+        Thread.sleep(3000);
+        runner.isRun = false;
+
+        executorService.shutdown();
+    }
+
+    public static class Runner {
+
+        private List<Integer> data = new LinkedList<>();
+
+        private static final int MAX_SIZE = 5;
+
+        public volatile boolean isRun = true;
+
+        public void produce() {
+            while (isRun) {
+
+                synchronized (this) {
+                    while (data.size() >= MAX_SIZE) {
+                        try {
+                            wait();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    int i = new Random().nextInt(100);
+                    data.add(i);
+                    System.out.println("生产中：" + i);
+                    notify();
+                }
+
+            }
+        }
+
+        public void consume() {
+            while (isRun) {
+
+                synchronized (this) {
+                    while (data.isEmpty()) {
+                        try {
+                            wait();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    Integer i = data.remove(0);
+                    System.out.println("消费中：" + i);
+                    notify();
+                }
+
+            }
+        }
 
 
     }
+
 
     private static void testDeadLock() {
         Object m1 = new Object();
         Object m2 = new Object();
 
-        new Thread(()->{
+        new Thread(() -> {
 
-            synchronized (m1){
-                System.out.println(Thread.currentThread().getId()+" hold m1");
-                synchronized (m2){
-                    System.out.println(Thread.currentThread().getId()+" hold m2");
+            synchronized (m1) {
+                System.out.println(Thread.currentThread().getId() + " hold m1");
+                synchronized (m2) {
+                    System.out.println(Thread.currentThread().getId() + " hold m2");
                 }
             }
 
         }).start();
 
-        new Thread(()->{
+        new Thread(() -> {
 
 //            synchronized (m2){
 //                System.out.println(Thread.currentThread().getId()+" hold m2");
@@ -137,13 +284,13 @@ public class JDKDemo {
 
     private static void testSynchronized() {
         Object obj = new Object();
-        synchronized (obj){
+        synchronized (obj) {
             echo("Hello");
         }
 
         int count = 1000000;
-        List list  = new ArrayList();
-        List vector  = Collections.synchronizedList(new ArrayList());
+        List list = new ArrayList();
+        List vector = Collections.synchronizedList(new ArrayList());
 
         testSpeed(count, list);
         testSpeed(count, vector);
@@ -161,10 +308,10 @@ public class JDKDemo {
             list.add(i);
         }
         sw.stop();
-        System.out.println(list.getClass().getName()+" cost: "+sw.getTotalTimeMillis());
+        System.out.println(list.getClass().getName() + " cost: " + sw.getTotalTimeMillis());
     }
 
-    private synchronized static void echo(String msg){
+    private synchronized static void echo(String msg) {
         System.out.println(msg);
     }
 
@@ -178,7 +325,7 @@ public class JDKDemo {
 
         System.out.println(runtimeMXBean.getPid());
 
-        LocalDateTime localDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(runtimeMXBean.getStartTime()),ZoneId.systemDefault());
+        LocalDateTime localDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(runtimeMXBean.getStartTime()), ZoneId.systemDefault());
         System.out.println(runtimeMXBean.getStartTime());
         System.out.println(localDateTime);
         System.out.println(runtimeMXBean.getUptime());
