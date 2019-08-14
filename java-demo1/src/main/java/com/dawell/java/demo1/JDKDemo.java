@@ -107,6 +107,67 @@ public class JDKDemo {
 
         testUnsafe();
 
+        testSynchronousQueue();
+
+        testFlow();
+
+    }
+
+    private static void testFlow() throws InterruptedException {
+        CompletableFuture.supplyAsync(() -> 1)
+                .thenApply(String::valueOf)
+                .completeExceptionally(new RuntimeException());
+
+        SubmissionPublisher<String> sp = new SubmissionPublisher<>();
+        sp.subscribe(new Flow.Subscriber<>() {
+            private Flow.Subscription subscription;
+
+            @Override
+            public void onSubscribe(Flow.Subscription subscription) {
+                System.out.println("订阅");
+                subscription.request(3);
+                this.subscription = subscription;
+            }
+
+            @Override
+            public void onNext(String item) {
+                if ("exit".equals(item)) {
+                    subscription.cancel();
+                    return;
+                }
+                System.out.println("处理" + item);
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                System.out.println("异常");
+            }
+
+            @Override
+            public void onComplete() {
+                System.out.println("完成");
+            }
+        });
+        sp.submit("Hello");
+        sp.submit("Hello2");
+        sp.submit("exit");
+        sp.submit("hello3");
+
+        Thread.sleep(100);
+    }
+
+
+    private static void testSynchronousQueue() throws InterruptedException {
+        SynchronousQueue<Integer> queue = new SynchronousQueue<>();
+        new Thread(() -> {
+            try {
+                queue.put(1);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }).start();
+        System.out.println(queue.size());
+        System.out.println(queue.take());
     }
 
     private static void testLock() {
@@ -152,7 +213,7 @@ public class JDKDemo {
             public Unsafe run() throws Exception {
                 Field f = Unsafe.class.getDeclaredField("theUnsafe");
                 f.setAccessible(true);
-                return (Unsafe)f.get((Object)null);
+                return (Unsafe) f.get((Object) null);
             }
         };
         Unsafe unsafe = AccessController.doPrivileged(action);
@@ -191,7 +252,7 @@ public class JDKDemo {
 //        producerFuture.get();
 //        consumerFuture.get();
 
-        Thread.sleep(3000);
+        Thread.sleep(1000);
         runner.isRun = false;
 
         executorService.shutdown();
@@ -286,7 +347,9 @@ public class JDKDemo {
         Object obj = new Object();
         synchronized (obj) {
             echo("Hello");
+            System.out.println("holdsLock: " + Thread.holdsLock(obj));
         }
+        System.out.println("holdsLock: " + Thread.holdsLock(obj));
 
         int count = 1000000;
         List list = new ArrayList();
